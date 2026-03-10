@@ -59,7 +59,14 @@ def load_yaml(path):
 
 def save_yaml(path, data):
     with open(path, "w", encoding="utf-8") as f:
-        yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        yaml.dump(
+            data, f,
+            default_flow_style=False,
+            allow_unicode=True,
+            sort_keys=False,
+            default_style='"',
+            indent=2,
+        )
 
 
 def upsert_list_entry(entries, key_field, key_value, new_entry):
@@ -334,7 +341,12 @@ Examples:
     conf_path = generate_run_spec(args)
     update_credentials(args)
 
-    run_helm(conf_path, args.suite, args.max_instances)
+    try:
+        run_helm(conf_path, args.suite, args.max_instances)
+    finally:
+        if conf_path.exists():
+            conf_path.unlink()
+            print(f"  Cleaned up {conf_path.name}")
 
     store_results(args.suite)
 
