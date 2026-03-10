@@ -203,7 +203,7 @@ def update_credentials(args):
     print(f"  credentials.conf: {'updated' if updated else 'added'} {key_name}")
 
 
-def run_helm(conf_path, suite, max_instances):
+def run_helm(conf_path, suite, max_instances, num_threads=1):
     """Run helm-run as a subprocess."""
     cmd = [
         "helm-run",
@@ -211,6 +211,7 @@ def run_helm(conf_path, suite, max_instances):
         "--suite", suite,
         "--local-path", ".",
         "--max-eval-instances", str(max_instances),
+        "-n", str(num_threads),
     ]
     print(f"\n=== Running HELM ===")
     print(f"  PYTHONPATH=. {' '.join(cmd)}")
@@ -329,6 +330,8 @@ Examples:
     parser.add_argument("--suite", required=True, help="Suite name for output dir and DB tracking")
     parser.add_argument("--max-instances", type=int, default=600, help="Max eval instances (default: 600)")
 
+    parser.add_argument("-n", "--num-threads", type=int, default=1, help="Number of parallel threads (default: 1)")
+
     parser.add_argument("--display-name", default=None, help="Display name for model metadata")
     parser.add_argument("--creator", default=None, help="Creator organization name")
 
@@ -342,7 +345,7 @@ Examples:
     update_credentials(args)
 
     try:
-        run_helm(conf_path, args.suite, args.max_instances)
+        run_helm(conf_path, args.suite, args.max_instances, args.num_threads)
     finally:
         if conf_path.exists():
             conf_path.unlink()
