@@ -29,7 +29,7 @@ Built for the [HELM Arabic Leaderboard](https://crfm.stanford.edu/2025/12/18/hel
 
 ## Features
 
-- **One-command evaluation pipeline** — configure, run, and store results with a single `helm_eval.py` invocation
+- **One-command evaluation pipeline** — configure, run, and store results with a single `helm_eval.py` invocation, supporting multiple benchmarks at once
 - **Auto-generated YAML configs** — model deployments, tokenizers, and metadata are created/updated automatically from CLI flags
 - **Thinking mode disabled** — custom client ensures fair comparison on the Arabic leaderboard by suppressing chain-of-thought reasoning
 - **Arabic MCQ system prompt** — injects an Arabic instruction to respond with answer letters only, preventing regex extraction failures
@@ -106,7 +106,7 @@ HELM resolves API keys by convention: a deployment named `fireworks/model-name` 
 
 ## Quick Start
 
-### Evaluate a Fireworks AI model
+### Evaluate a single benchmark
 
 ```bash
 source helm-env/bin/activate
@@ -115,11 +115,22 @@ python helm_eval.py \
   --model-name fireworks/kimi-k2p5 \
   --api-base https://api.fireworks.ai/inference/v1 \
   --api-model accounts/fireworks/models/kimi-k2p5 \
-  --tokenizer Qwen/Qwen2.5-7B \
   --benchmark aratrust \
-  --suite my-experiment \
-  --max-instances 600
+  --suite my-experiment
 ```
+
+### Evaluate multiple benchmarks at once
+
+```bash
+python helm_eval.py \
+  --model-name fireworks/kimi-k2p5 \
+  --api-base https://api.fireworks.ai/inference/v1 \
+  --api-model accounts/fireworks/models/kimi-k2p5 \
+  --benchmark aratrust arabic_mmlu alghafa arabic_exams arabic_mmmlu \
+  --suite full-eval
+```
+
+Each benchmark runs sequentially. The model deployment is reconfigured between benchmarks to set the correct system prompt (MCQ vs generation). Results are stored in the database after all benchmarks complete.
 
 ### Evaluate a local LM Studio model
 
@@ -134,27 +145,29 @@ python helm_eval.py \
   --max-instances 10
 ```
 
-### Run all benchmarks with parallel threads
+### Run with parallel threads
 
 ```bash
 python helm_eval.py \
   --model-name fireworks/kimi-k2p5 \
   --api-base https://api.fireworks.ai/inference/v1 \
   --api-model accounts/fireworks/models/kimi-k2p5 \
+  --benchmark aratrust arabic_mmlu \
   --suite base-kimi-k2p5 \
-  --max-instances 600 \
   -n 8
 ```
 
-When `--tokenizer` and `--benchmark` are omitted, they default to `Qwen/Qwen2.5-7B` and `aratrust` respectively. The `-n 8` flag runs evaluation with 8 parallel threads for faster execution.
+When `--tokenizer`, `--benchmark`, and `--max-instances` are omitted, they default to `Qwen/Qwen2.5-7B`, `aratrust`, and `600` respectively. The `-n 8` flag runs evaluation with 8 parallel threads.
 
 ### What happens under the hood
 
 1. **Configure** — updates `model_deployments.yaml`, `tokenizer_configs.yaml`, `model_metadata.yaml`, and `credentials.conf` with the provided arguments
-2. **Generate run spec** — creates a temporary `run_specs_<suite>.conf` file
-3. **Run HELM** — executes `helm-run` with `PYTHONPATH=.` so the custom client is discoverable
-4. **Store results** — streams evaluation results to PostgreSQL in batches of 10
-5. **Clean up** — removes the generated run spec file
+2. **For each benchmark:**
+   - Reconfigures model deployment (sets correct system prompt for MCQ vs generation)
+   - Generates a temporary `run_specs_<suite>.conf` file
+   - Runs `helm-run` with `PYTHONPATH=.` so the custom client is discoverable
+   - Cleans up the generated run spec file
+3. **Store results** — streams all evaluation results to PostgreSQL in batches of 10
 
 ---
 
@@ -182,7 +195,7 @@ python helm_eval.py [OPTIONS]
 | `--api-key` | `None` | API key. If not set, uses existing value in `credentials.conf` |
 | `--tokenizer` | `Qwen/Qwen2.5-7B` | HuggingFace tokenizer identifier |
 | `--max-seq-len` | `131072` | Maximum sequence length |
-| `--benchmark` | `aratrust` | Benchmark to run (see [Available Benchmarks](#available-benchmarks)) |
+| `--benchmark` | `aratrust` | Benchmark(s) to run — pass multiple to run several sequentially (see [Available Benchmarks](#available-benchmarks)) |
 | `--benchmark-args` | Benchmark-specific default | Override benchmark arguments (e.g. `category=ethics`) |
 | `--max-instances` | `600` | Maximum number of evaluation instances |
 | `-n`, `--num-threads` | `1` | Number of parallel evaluation threads |
