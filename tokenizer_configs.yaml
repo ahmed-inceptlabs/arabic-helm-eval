@@ -13,3 +13,10 @@
       "pretrained_model_name_or_path": "Qwen/Qwen2.5-7B"
   "end_of_text_token": "<|im_end|>"
   "prefix_token": "<|im_start|>"
+- "name": "deepseek3_2_tokenizer"
+  "tokenizer_spec":
+    "class_name": "helm.tokenizers.huggingface_tokenizer.HuggingFaceTokenizer"
+    "args":
+      "pretrained_model_name_or_path": "Qwen/Qwen2.5-7B"
+  "end_of_text_token": "<|im_end|>"
+  "prefix_token": "<|im_start|>"

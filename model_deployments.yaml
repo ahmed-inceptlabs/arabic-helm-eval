@@ -19,3 +19,12 @@
       "base_url": "https://api.fireworks.ai/inference/v1"
       "openai_model_name": "accounts/fireworks/models/kimi-k2p5"
       "system_prompt": ""
+- "name": "fireworks/deepseek3_2"
+  "model_name": "fireworks/deepseek3_2"
+  "tokenizer_name": "deepseek3_2_tokenizer"
+  "max_sequence_length": !!int "131072"
+  "client_spec":
+    "class_name": "fireworks_client.FireworksNoThinkingClient"
+    "args":
+      "base_url": "https://api.fireworks.ai/inference/v1"
+      "openai_model_name": "accounts/fireworks/models/deepseek-v3p2"
