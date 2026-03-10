@@ -57,7 +57,7 @@ def build_instance_stats_lookup(per_instance_stats):
             lookup[iid] = {}
         for stat in entry.get("stats", []):
             name = stat["name"]["name"]
-            if name in ("exact_match", "num_completion_tokens", "inference_runtime"):
+            if name in ("exact_match", "num_completion_tokens", "inference_runtime", "alrage_score"):
                 lookup[iid][name] = stat.get("mean", stat.get("sum", 0))
     return lookup
 
@@ -70,9 +70,13 @@ def extract_correct_reference(references):
     return None
 
 
-def format_mcq(num_refs):
-    """Return format string like MCQ_3, MCQ_4 based on number of references."""
-    return f"MCQ_{num_refs}"
+def detect_format(request_state):
+    """Detect format: 'generation' for open-ended QA, 'MCQ_N' for multiple choice."""
+    output_mapping = request_state.get("output_mapping", {})
+    if not output_mapping:
+        return "generation"
+    references = request_state.get("instance", {}).get("references", [])
+    return f"MCQ_{len(references)}"
 
 
 def insert_run(cur, run_spec, stats, suite, git_commit, git_branch):
@@ -90,7 +94,7 @@ def insert_run(cur, run_spec, stats, suite, git_commit, git_branch):
     metrics = {}
     for stat in stats:
         name = stat["name"]["name"]
-        if name in ("exact_match", "quasi_exact_match", "prefix_exact_match"):
+        if name in ("exact_match", "quasi_exact_match", "prefix_exact_match", "alrage_score"):
             metrics[name] = stat.get("mean", stat.get("sum"))
 
     # Build config with git info and suite
@@ -108,8 +112,11 @@ def insert_run(cur, run_spec, stats, suite, git_commit, git_branch):
         "reasoning_effort", ""
     ) not in ("", "off", None)
 
-    # Determine judge model — HELM uses exact_match (auto-grading)
-    judge_model = "helm_exact_match"
+    # Determine judge model
+    if "alrage" in scenario_class.lower():
+        judge_model = "openai/gpt-4o-2024-11-20"
+    else:
+        judge_model = "helm_exact_match"
 
     cur.execute(
         """
@@ -154,11 +161,11 @@ def build_sample_row(run_id, idx, request_state, instance_stats):
     raw_prompt = request_state.get("request", {}).get("prompt", "")
 
     # Format
-    fmt = format_mcq(len(references))
+    fmt = detect_format(request_state)
 
     # Stats from per_instance_stats
     stats = instance_stats.get(instance_id, {})
-    judge_score = stats.get("exact_match")
+    judge_score = stats.get("exact_match") if "exact_match" in stats else stats.get("alrage_score")
     answer_tokens = stats.get("num_completion_tokens")
     latency = result.get("request_time")
     latency_ms = round(latency * 1000, 2) if latency else None
@@ -175,6 +182,11 @@ def build_sample_row(run_id, idx, request_state, instance_stats):
         else None,
         "instance_id": instance_id,
     }
+
+    # Include annotation data if present (e.g., ALRAGE GPT-4o judge results)
+    annotations = request_state.get("annotations", {})
+    if annotations:
+        meta["annotations"] = annotations
 
     # Parse numeric index from instance_id like "id42" -> 42
     try:
@@ -294,9 +306,14 @@ def main():
         conn.commit()
 
         # Summary
-        correct = sum(1 for s in instance_stats.values() if s.get("exact_match", 0) == 1.0)
-        accuracy = (correct / total * 100) if total > 0 else 0
-        print(f"\nDone! run_id={run_id}, samples={total}, accuracy={accuracy:.1f}%")
+        if any("alrage_score" in s for s in instance_stats.values()):
+            scores = [s.get("alrage_score", 0) for s in instance_stats.values()]
+            avg_score = sum(scores) / len(scores) if scores else 0
+            print(f"\nDone! run_id={run_id}, samples={total}, avg_score={avg_score:.3f}")
+        else:
+            correct = sum(1 for s in instance_stats.values() if s.get("exact_match", 0) == 1.0)
+            accuracy = (correct / total * 100) if total > 0 else 0
+            print(f"\nDone! run_id={run_id}, samples={total}, accuracy={accuracy:.1f}%")
 
     except Exception as e:
         conn.rollback()
