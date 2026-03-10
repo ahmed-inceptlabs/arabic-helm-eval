@@ -322,33 +322,102 @@ def process_single_run(conn, cur, run_dir, suite, git_commit, git_branch):
     return run_id, total
 
 
+def get_existing_helm_run_names(cur):
+    """Query DB for all helm_run_name values already stored."""
+    cur.execute("SELECT config->>'helm_run_name' FROM eval_runs WHERE config->>'helm_run_name' IS NOT NULL")
+    return {row[0] for row in cur.fetchall()}
+
+
+def discover_run_dirs(bulk_path):
+    """Find all valid run directories under bulk_path/runs/*/.
+
+    Returns list of (run_dir, suite) tuples sorted by path.
+    """
+    runs_root = bulk_path / "runs"
+    if not runs_root.exists():
+        print(f"Error: no 'runs' directory found in {bulk_path}")
+        sys.exit(1)
+
+    results = []
+    for suite_dir in sorted(runs_root.iterdir()):
+        if not suite_dir.is_dir():
+            continue
+        suite = suite_dir.name
+        for run_dir in sorted(suite_dir.iterdir()):
+            if not run_dir.is_dir():
+                continue
+            if not validate_run_dir(run_dir):
+                results.append((run_dir, suite))
+    return results
+
+
+def bulk_import(conn, cur, bulk_path, git_commit, git_branch):
+    """Import all HELM runs from a benchmark_output directory, skipping duplicates."""
+    run_dirs = discover_run_dirs(bulk_path)
+    if not run_dirs:
+        print("No valid run directories found.")
+        return
+
+    existing = get_existing_helm_run_names(cur)
+    print(f"Found {len(run_dirs)} run(s), {len(existing)} already in DB\n")
+
+    imported, skipped, failed = 0, 0, 0
+
+    for run_dir, suite in run_dirs:
+        run_spec = load_json(run_dir / "run_spec.json")
+        helm_run_name = run_spec.get("name", "")
+
+        if helm_run_name in existing:
+            print(f"[SKIP] {run_dir.name} (already in DB)")
+            skipped += 1
+            continue
+
+        print(f"[IMPORT] {run_dir.name} (suite={suite})")
+        try:
+            run_id, total = process_single_run(conn, cur, run_dir, suite, git_commit, git_branch)
+            existing.add(helm_run_name)
+            imported += 1
+        except Exception as e:
+            conn.rollback()
+            print(f"  [FAIL] {e}")
+            failed += 1
+
+    print(f"\nBulk import complete: {imported} imported, {skipped} skipped, {failed} failed")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Store HELM results in database")
-    parser.add_argument("--run-dir", required=True, help="Path to HELM run output directory")
-    parser.add_argument("--suite", default="", help="Suite label for tracking")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--run-dir", help="Path to a single HELM run output directory")
+    group.add_argument("--bulk", help="Path to benchmark_output dir to import all runs")
+    parser.add_argument("--suite", default="", help="Suite label for tracking (single-run mode)")
     args = parser.parse_args()
 
-    run_dir = Path(args.run_dir)
-    if not run_dir.exists():
-        print(f"Error: run directory not found: {run_dir}")
-        sys.exit(1)
-
-    missing = validate_run_dir(run_dir)
-    if missing:
-        for fname in missing:
-            print(f"Error: missing {fname} in {run_dir}")
-        sys.exit(1)
-
-    print(f"Loading run from: {run_dir}")
-
     git_commit, git_branch = get_git_info()
-    print(f"  Git: {git_branch}@{git_commit[:8] if git_commit else 'N/A'}")
+    print(f"Git: {git_branch}@{git_commit[:8] if git_commit else 'N/A'}")
 
     conn = get_db_connection()
     cur = conn.cursor()
 
     try:
-        process_single_run(conn, cur, run_dir, args.suite, git_commit, git_branch)
+        if args.bulk:
+            bulk_path = Path(args.bulk)
+            if not bulk_path.exists():
+                print(f"Error: path not found: {bulk_path}")
+                sys.exit(1)
+            bulk_import(conn, cur, bulk_path, git_commit, git_branch)
+        else:
+            run_dir = Path(args.run_dir)
+            if not run_dir.exists():
+                print(f"Error: run directory not found: {run_dir}")
+                sys.exit(1)
+            missing = validate_run_dir(run_dir)
+            if missing:
+                for fname in missing:
+                    print(f"Error: missing {fname} in {run_dir}")
+                sys.exit(1)
+            print(f"Loading run from: {run_dir}")
+            process_single_run(conn, cur, run_dir, args.suite, git_commit, git_branch)
     except Exception as e:
         conn.rollback()
         print(f"\nError: {e}")
