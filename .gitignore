@@ -2,6 +2,8 @@ helm-env/
 benchmark_output/
 cache/
 credentials.conf
+run_specs_*.conf
+!run_specs_test.conf
 __pycache__/
 *.pyc
 .DS_Store
