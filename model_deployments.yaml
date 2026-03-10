@@ -9,3 +9,13 @@ model_deployments:
         api_key: "lm-studio"
         org_id: ""
         base_url: "http://127.0.0.1:1234/v1"
+
+  - name: fireworks/kimi-k2p5
+    model_name: fireworks/kimi-k2p5
+    tokenizer_name: moonshot/kimi-k2p5
+    max_sequence_length: 131072
+    client_spec:
+      class_name: "fireworks_client.FireworksNoThinkingClient"
+      args:
+        base_url: "https://api.fireworks.ai/inference/v1"
+        openai_model_name: "accounts/fireworks/models/kimi-k2p5"
