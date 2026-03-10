@@ -67,14 +67,11 @@ This auto-generates YAML configs, runs HELM, and streams results to `eval_runs` 
 
 **Available benchmarks:** `aratrust`, `arabic_mmlu`, `alghafa`, `arabic_exams`, `arabic_mmmlu`
 
-### Standalone tools (alternative)
+### Standalone storage (alternative)
 
 ```bash
 # Store results from a specific run directory
 python store_helm_results.py --run-dir benchmark_output/runs/<suite>/<run-name> --suite <suite>
-
-# Or use the shell wrapper
-./run_and_store.sh <suite-name> [conf-file] [max-instances]
 ```
 
 ## Architecture
