@@ -14,7 +14,7 @@ Built for the [HELM Arabic Leaderboard](https://crfm.stanford.edu/2025/12/18/hel
 python3.10 -m venv helm-env
 source helm-env/bin/activate
 pip install crfm-helm psycopg2-binary python-dotenv ijson pyyaml
-git clone https://github.com/ahmed-inceptlabs/arabic-helm-eval.git
+git clone https://github.com/InceptLabs/arabic-helm-eval.git
 cd arabic-helm-eval
 ```
 
