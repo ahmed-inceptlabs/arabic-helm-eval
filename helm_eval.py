@@ -46,7 +46,7 @@ PROJECT_DIR = Path(__file__).parent
 # Available benchmarks and their default args
 BENCHMARKS = {
     "aratrust": "category=all",
-    "arabic_mmlu": "subset=All",
+    "arabic_mmlu": "subset=all",
     "alghafa": "subset=all",
     "arabic_exams": "subject=all",
     "arabic_mmmlu": "subject=all",
@@ -73,6 +73,57 @@ ALGHAFA_SUBSETS = [
 MADINAH_QA_SUBSETS = [
     "Arabic_Language_(General)",
     "Arabic_Language_(Grammar)",
+]
+
+ARABIC_EXAMS_SUBJECTS = [
+    "Biology",
+    "Islamic_Studies",
+    "Physics",
+    "Science",
+    "Social",
+]
+
+ARABIC_MMLU_SUBSETS = [
+    "Accounting_(University)",
+    "Arabic_Language_(General)",
+    "Arabic_Language_(Grammar)",
+    "Arabic_Language_(High_School)",
+    "Arabic_Language_(Middle_School)",
+    "Arabic_Language_(Primary_School)",
+    "Biology_(High_School)",
+    "Civics_(High_School)",
+    "Civics_(Middle_School)",
+    "Computer_Science_(High_School)",
+    "Computer_Science_(Middle_School)",
+    "Computer_Science_(Primary_School)",
+    "Computer_Science_(University)",
+    "Driving_Test",
+    "Economics_(High_School)",
+    "Economics_(Middle_School)",
+    "Economics_(University)",
+    "General_Knowledge",
+    "General_Knowledge_(Middle_School)",
+    "General_Knowledge_(Primary_School)",
+    "Geography_(High_School)",
+    "Geography_(Middle_School)",
+    "Geography_(Primary_School)",
+    "History_(High_School)",
+    "History_(Middle_School)",
+    "History_(Primary_School)",
+    "Islamic_Studies",
+    "Islamic_Studies_(High_School)",
+    "Islamic_Studies_(Middle_School)",
+    "Islamic_Studies_(Primary_School)",
+    "Law_(Professional)",
+    "Management_(University)",
+    "Math_(Primary_School)",
+    "Natural_Science_(Middle_School)",
+    "Natural_Science_(Primary_School)",
+    "Philosophy_(High_School)",
+    "Physics_(High_School)",
+    "Political_Science_(University)",
+    "Social_Science_(Middle_School)",
+    "Social_Science_(Primary_School)",
 ]
 
 ARABIC_MMMLU_SUBJECTS = [
@@ -221,6 +272,10 @@ def _expand_benchmark_entries(benchmark, bench_args, model_name):
     """
     if benchmark == "madinah_qa" and bench_args == "subset=all":
         return [f"madinah_qa:subset={s},model={model_name}" for s in MADINAH_QA_SUBSETS]
+    if benchmark == "arabic_mmlu" and bench_args == "subset=all":
+        return [f"arabic_mmlu:subset={s},model={model_name}" for s in ARABIC_MMLU_SUBSETS]
+    if benchmark == "arabic_exams" and bench_args == "subject=all":
+        return [f"arabic_exams:subject={s},model={model_name}" for s in ARABIC_EXAMS_SUBJECTS]
     if benchmark == "alghafa" and bench_args == "subset=all":
         return [f"alghafa:subset={s},model={model_name}" for s in ALGHAFA_SUBSETS]
     if benchmark == "arabic_mmmlu" and bench_args == "subject=all":
