@@ -226,13 +226,13 @@ def ensure_model_deployment(args):
 
 def _fetch_tokenizer_tokens(tokenizer_id):
     """Fetch EOS/BOS tokens from HuggingFace tokenizer_config.json."""
-    try:
-        from huggingface_hub import hf_hub_download
-        import json
+    import json
+    import urllib.request
 
-        config_path = hf_hub_download(tokenizer_id, "tokenizer_config.json")
-        with open(config_path) as f:
-            config = json.load(f)
+    url = f"https://huggingface.co/{tokenizer_id}/raw/main/tokenizer_config.json"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            config = json.loads(resp.read())
 
         eos = config.get("eos_token")
         bos = config.get("bos_token")
@@ -263,7 +263,7 @@ def ensure_tokenizer_config(args, tokenizer_name):
         "name": tokenizer_name,
         "tokenizer_spec": {
             "class_name": "helm.tokenizers.huggingface_tokenizer.HuggingFaceTokenizer",
-            "args": {"pretrained_model_name_or_path": args.tokenizer},
+            "args": {"pretrained_model_name_or_path": args.tokenizer, "trust_remote_code": True},
         },
         "end_of_text_token": eos_token,
         "prefix_token": bos_token,
