@@ -75,7 +75,7 @@ python helm_eval.py \
 
 This auto-generates YAML configs, runs HELM, and streams results to `eval_runs` + `eval_samples` in batches of 10. Git commit is tracked per run. DB credentials in `.env`.
 
-**Available benchmarks:** `aratrust`, `arabic_mmlu`, `alghafa`, `arabic_exams`, `arabic_mmmlu`, `alrage` (pass multiple to `--benchmark` to run several at once)
+**Available benchmarks:** `aratrust`, `arabic_mmlu`, `alghafa`, `arabic_exams`, `arabic_mmmlu`, `alrage`, `madinah_qa` (pass multiple to `--benchmark` to run several at once)
 
 > **Note:** `alrage` is a generation benchmark (not MCQ) scored by GPT-4o. Requires a valid OpenAI API key in `credentials.conf`.
 

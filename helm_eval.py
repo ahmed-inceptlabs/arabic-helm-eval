@@ -46,11 +46,12 @@ PROJECT_DIR = Path(__file__).parent
 # Available benchmarks and their default args
 BENCHMARKS = {
     "aratrust": "category=all",
-    "arabic_mmlu": "subset=All",
+    "arabic_mmlu": "subset=all",
     "alghafa": "subset=all",
     "arabic_exams": "subject=all",
     "arabic_mmmlu": "subject=all",
     "alrage": "",
+    "madinah_qa": "subset=all",
 }
 
 # Generation benchmarks should NOT get the MCQ system prompt
@@ -67,6 +68,62 @@ ALGHAFA_SUBSETS = [
     "multiple_choice_rating_sentiment_no_neutral_task",
     "multiple_choice_rating_sentiment_task",
     "multiple_choice_sentiment_task",
+]
+
+MADINAH_QA_SUBSETS = [
+    "Arabic_Language_(General)",
+    "Arabic_Language_(Grammar)",
+]
+
+ARABIC_EXAMS_SUBJECTS = [
+    "Biology",
+    "Islamic_Studies",
+    "Physics",
+    "Science",
+    "Social",
+]
+
+ARABIC_MMLU_SUBSETS = [
+    "Accounting_(University)",
+    "Arabic_Language_(General)",
+    "Arabic_Language_(Grammar)",
+    "Arabic_Language_(High_School)",
+    "Arabic_Language_(Middle_School)",
+    "Arabic_Language_(Primary_School)",
+    "Biology_(High_School)",
+    "Civics_(High_School)",
+    "Civics_(Middle_School)",
+    "Computer_Science_(High_School)",
+    "Computer_Science_(Middle_School)",
+    "Computer_Science_(Primary_School)",
+    "Computer_Science_(University)",
+    "Driving_Test",
+    "Economics_(High_School)",
+    "Economics_(Middle_School)",
+    "Economics_(University)",
+    "General_Knowledge",
+    "General_Knowledge_(Middle_School)",
+    "General_Knowledge_(Primary_School)",
+    "Geography_(High_School)",
+    "Geography_(Middle_School)",
+    "Geography_(Primary_School)",
+    "History_(High_School)",
+    "History_(Middle_School)",
+    "History_(Primary_School)",
+    "Islamic_Studies",
+    "Islamic_Studies_(High_School)",
+    "Islamic_Studies_(Middle_School)",
+    "Islamic_Studies_(Primary_School)",
+    "Law_(Professional)",
+    "Management_(University)",
+    "Math_(Primary_School)",
+    "Natural_Science_(Middle_School)",
+    "Natural_Science_(Primary_School)",
+    "Philosophy_(High_School)",
+    "Physics_(High_School)",
+    "Political_Science_(University)",
+    "Social_Science_(Middle_School)",
+    "Social_Science_(Primary_School)",
 ]
 
 ARABIC_MMMLU_SUBJECTS = [
@@ -167,6 +224,32 @@ def ensure_model_deployment(args):
     return tokenizer_name
 
 
+def _fetch_tokenizer_tokens(tokenizer_id):
+    """Fetch EOS/BOS tokens from HuggingFace tokenizer_config.json."""
+    import json
+    import urllib.request
+
+    url = f"https://huggingface.co/{tokenizer_id}/raw/main/tokenizer_config.json"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            config = json.loads(resp.read())
+
+        eos = config.get("eos_token")
+        bos = config.get("bos_token")
+
+        # Some configs store tokens as dicts with "content" key
+        if isinstance(eos, dict):
+            eos = eos.get("content", eos)
+        if isinstance(bos, dict):
+            bos = bos.get("content", bos)
+
+        return eos, bos
+    except Exception as e:
+        print(f"  Warning: Could not fetch tokenizer config for {tokenizer_id}: {e}")
+        print("  Falling back to default tokens (<|im_end|>, <|im_start|>)")
+        return "<|im_end|>", "<|im_start|>"
+
+
 def ensure_tokenizer_config(args, tokenizer_name):
     """Add or update tokenizer entry in tokenizer_configs.yaml."""
     path = PROJECT_DIR / "tokenizer_configs.yaml"
@@ -174,16 +257,17 @@ def ensure_tokenizer_config(args, tokenizer_name):
     data = load_yaml(path)
     configs = data.setdefault("tokenizer_configs", [])
 
+    eos_token, bos_token = _fetch_tokenizer_tokens(args.tokenizer)
+    print(f"  Tokenizer tokens: eos={eos_token!r}, bos={bos_token!r}")
+
     entry = {
         "name": tokenizer_name,
         "tokenizer_spec": {
             "class_name": "helm.tokenizers.huggingface_tokenizer.HuggingFaceTokenizer",
-            "args": {"pretrained_model_name_or_path": args.tokenizer},
+            "args": {"pretrained_model_name_or_path": args.tokenizer, "trust_remote_code": True},
         },
-        # "end_of_text_token": "<｜begin▁of▁sentence｜>",
-        # "prefix_token": "<｜end▁of▁sentence｜>",
-        "end_of_text_token": "<｜endoftext｜>",
-        "prefix_token": "<｜startoftext｜>",
+        "end_of_text_token": eos_token,
+        "prefix_token": bos_token,
     }
 
     action = upsert_list_entry(configs, "name", tokenizer_name, entry)
@@ -216,6 +300,12 @@ def _expand_benchmark_entries(benchmark, bench_args, model_name):
     Benchmarks like alghafa and arabic_mmmlu don't support 'all' natively,
     so we expand them into individual subset entries.
     """
+    if benchmark == "madinah_qa" and bench_args == "subset=all":
+        return [f"madinah_qa:subset={s},model={model_name}" for s in MADINAH_QA_SUBSETS]
+    if benchmark == "arabic_mmlu" and bench_args == "subset=all":
+        return [f"arabic_mmlu:subset={s},model={model_name}" for s in ARABIC_MMLU_SUBSETS]
+    if benchmark == "arabic_exams" and bench_args == "subject=all":
+        return [f"arabic_exams:subject={s},model={model_name}" for s in ARABIC_EXAMS_SUBJECTS]
     if benchmark == "alghafa" and bench_args == "subset=all":
         return [f"alghafa:subset={s},model={model_name}" for s in ALGHAFA_SUBSETS]
     if benchmark == "arabic_mmmlu" and bench_args == "subject=all":
@@ -445,7 +535,7 @@ Examples:
                         help="Benchmark(s) to run (default: aratrust)")
     parser.add_argument("--benchmark-args", default=None, help="Override benchmark args (e.g. category=all)")
     parser.add_argument("--suite", required=True, help="Suite name for output dir and DB tracking")
-    parser.add_argument("--max-instances", type=int, default=200000, help="Max eval instances (default: 600)")
+    parser.add_argument("--max-instances", type=int, default=99999, help="Max eval instances per subset (default: no practical limit)")
 
     parser.add_argument("-n", "--num-threads", type=int, default=1, help="Number of parallel threads (default: 1)")
 
