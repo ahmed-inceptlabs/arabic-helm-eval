@@ -12,6 +12,9 @@ from typing import Optional
 
 import yaml
 from openai import OpenAI
+from pydantic import BaseModel
+
+from models import MCQResponse, DialogueResponse
 
 
 SCRIPT_DIR = Path(__file__).parent
@@ -39,6 +42,8 @@ def _read_key_from_credentials(api_base: str) -> Optional[str]:
                 return line.split(":", 1)[1].strip().strip('"').strip("'")
     return None
 
+
+# --- Fallback functions for --no-structured-output mode ---
 
 def _extract_json(text: str):
     text = text.strip()
@@ -75,9 +80,18 @@ def _validate_dialogue(payload: dict):
             raise ValueError("Dialogue message content is empty")
     return messages
 
+# --- End fallback functions ---
 
-def _render_template(template: str, topic: dict):
-    return template.replace("{topic}", topic["name"]).replace("{difficulty}", topic["difficulty"])
+
+def _render_template(template: str, topic: dict) -> str:
+    focus = topic.get("focus", [])
+    focus_str = "، ".join(focus) if isinstance(focus, list) else str(focus)
+    return (
+        template
+        .replace("{topic}", topic["name"])
+        .replace("{difficulty}", topic["difficulty"])
+        .replace("{focus}", focus_str)
+    )
 
 
 def _make_messages(system_prompt: str, user_prompt: str):
@@ -87,15 +101,34 @@ def _make_messages(system_prompt: str, user_prompt: str):
     ]
 
 
-def _call_model(client: OpenAI, model: str, messages: list, temperature: float, max_retries: int):
+def _call_model(
+    client: OpenAI,
+    model: str,
+    messages: list,
+    temperature: float,
+    max_retries: int,
+    response_model: type[BaseModel] | None = None,
+):
     for attempt in range(max_retries):
         try:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=temperature,
-            )
-            return resp.choices[0].message.content or ""
+            if response_model is not None:
+                resp = client.beta.chat.completions.parse(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                    response_format=response_model,
+                )
+                parsed = resp.choices[0].message.parsed
+                if parsed is None:
+                    raise ValueError("Model returned refusal or unparseable response")
+                return parsed
+            else:
+                resp = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=temperature,
+                )
+                return resp.choices[0].message.content or ""
         except Exception as e:
             wait = 2 ** attempt
             print(f"API error: {e}. Retrying in {wait}s...", file=sys.stderr)
@@ -111,12 +144,16 @@ def generate_examples(
     mcq_fraction: float,
     temperature: float,
     max_retries: int,
+    use_structured: bool = True,
 ):
     topics = curriculum.get("topics", [])
     templates = curriculum.get("templates", {})
     mcq_template = templates.get("mcq_prompt", "")
     dialogue_template = templates.get("dialogue_prompt", "")
-    system_prompt = "أنت نموذج مساعد يلتزم بإخراج JSON فقط دون أي نص إضافي."
+    system_prompt = curriculum.get(
+        "system_prompt",
+        "أنت نموذج مساعد يلتزم بإخراج JSON فقط دون أي نص إضافي.",
+    )
 
     if not topics or not mcq_template:
         raise ValueError("Curriculum topics or MCQ template missing")
@@ -140,6 +177,7 @@ def generate_examples(
 
     results = []
 
+    # --- MCQ generation ---
     mcq_done = 0
     mcq_attempts = 0
     mcq_max_attempts = max(mcq_target * 3, 1)
@@ -149,9 +187,19 @@ def generate_examples(
         prompt = _render_template(mcq_template, topic)
         messages = _make_messages(system_prompt, prompt)
         try:
-            raw = _call_model(client, model, messages, temperature, max_retries)
-            payload = _extract_json(raw)
-            question, options, answer = _validate_mcq(payload)
+            if use_structured:
+                mcq = _call_model(
+                    client, model, messages, temperature, max_retries,
+                    response_model=MCQResponse,
+                )
+                question = mcq.question
+                options = mcq.options
+                answer = mcq.answer
+                raw = mcq.model_dump_json(ensure_ascii=False)
+            else:
+                raw = _call_model(client, model, messages, temperature, max_retries)
+                payload = _extract_json(raw)
+                question, options, answer = _validate_mcq(payload)
         except Exception as e:
             print(f"MCQ generation error: {e}", file=sys.stderr)
             continue
@@ -181,6 +229,7 @@ def generate_examples(
         )
         mcq_done += 1
 
+    # --- Dialogue generation ---
     dialogue_done = 0
     dialogue_attempts = 0
     dialogue_max_attempts = max(dialogue_target * 3, 1)
@@ -192,9 +241,17 @@ def generate_examples(
         prompt = _render_template(dialogue_template, topic)
         messages = _make_messages(system_prompt, prompt)
         try:
-            raw = _call_model(client, model, messages, temperature, max_retries)
-            payload = _extract_json(raw)
-            messages_out = _validate_dialogue(payload)
+            if use_structured:
+                dialogue = _call_model(
+                    client, model, messages, temperature, max_retries,
+                    response_model=DialogueResponse,
+                )
+                messages_out = [m.model_dump() for m in dialogue.messages]
+                raw = dialogue.model_dump_json(ensure_ascii=False)
+            else:
+                raw = _call_model(client, model, messages, temperature, max_retries)
+                payload = _extract_json(raw)
+                messages_out = _validate_dialogue(payload)
         except Exception as e:
             print(f"Dialogue generation error: {e}", file=sys.stderr)
             continue
@@ -226,6 +283,10 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--prompt-config", default=str(PROMPT_PATH))
     parser.add_argument("--out", default=str(RAW_DIR / "synthetic_grammar.jsonl"))
+    parser.add_argument(
+        "--no-structured-output", action="store_true",
+        help="Disable structured output; fall back to regex JSON extraction",
+    )
     args = parser.parse_args()
 
     random.seed(args.seed)
@@ -246,6 +307,7 @@ def main():
         args.mcq_fraction,
         args.temperature,
         args.max_retries,
+        use_structured=not args.no_structured_output,
     )
 
     out_path = Path(args.out)
