@@ -434,7 +434,9 @@ def store_results(suite):
             print(f"  Created eval_run id={run_id}")
 
             grand_total = 0
-            all_instance_stats = {}
+            total_correct = 0
+            total_score_sum = 0.0
+            is_generation = False
             per_subset_metrics = {}
 
             for run_dir in dirs:
@@ -448,12 +450,18 @@ def store_results(suite):
 
                 per_instance_stats = load_json(run_dir / "per_instance_stats.json")
                 instance_stats = build_instance_stats_lookup(per_instance_stats)
-                all_instance_stats.update(instance_stats)
 
                 total = stream_and_store_samples(conn, cur, run_id, run_dir, instance_stats, category=category)
                 grand_total += total
 
-                # Per-subset accuracy
+                # Accumulate correct/scores per subset (avoids instance_id collision)
+                if any("alrage_score" in s for s in instance_stats.values()):
+                    is_generation = True
+                    total_score_sum += sum(s.get("alrage_score", 0) for s in instance_stats.values())
+                else:
+                    total_correct += sum(1 for s in instance_stats.values() if s.get("exact_match", 0) == 1.0)
+
+                # Per-subset accuracy from stats.json
                 subset_stats = load_json(run_dir / "stats.json")
                 for stat in subset_stats:
                     name = stat["name"]["name"]
@@ -463,14 +471,11 @@ def store_results(suite):
                 print(f"  {subset_label}: {total} samples")
 
             # Update run with aggregated totals and per-subset metrics
-            is_generation = any("alrage_score" in s for s in all_instance_stats.values())
             if is_generation:
-                scores = [s.get("alrage_score", 0) for s in all_instance_stats.values()]
-                overall = sum(scores) / len(scores) if scores else 0
+                overall = total_score_sum / grand_total if grand_total > 0 else 0
                 agg_metrics = {"alrage_score": overall, "per_subset": per_subset_metrics}
             else:
-                correct = sum(1 for s in all_instance_stats.values() if s.get("exact_match", 0) == 1.0)
-                overall = correct / grand_total if grand_total > 0 else 0
+                overall = total_correct / grand_total if grand_total > 0 else 0
                 agg_metrics = {"exact_match": overall, "per_subset": per_subset_metrics}
 
             cur.execute(
