@@ -6,7 +6,7 @@ This is a concise cookbook for running the pipeline using plain `python3`.
 
 ```bash
 python3 -m venv madinah_data_curation/.venv
-madinah_data_curation/.venv/bin/pip install datasets pyyaml openai faiss-cpu
+madinah_data_curation/.venv/bin/pip install datasets pyyaml openai pydantic faiss-cpu
 ```
 
 If your home cache is full, set HF cache paths inside the repo:
@@ -49,6 +49,16 @@ python3 madinah_data_curation/01_generate_synthetic_grammar.py \
   --api-base https://api.fireworks.ai/inference/v1 \
   --model accounts/fireworks/models/kimi-k2p5 \
   --max-examples 1000
+```
+
+For APIs that don't support structured output (e.g., some local models), use the
+fallback mode which extracts JSON via regex:
+```bash
+python3 madinah_data_curation/01_generate_synthetic_grammar.py \
+  --api-base http://127.0.0.1:1234/v1 \
+  --model local-model \
+  --max-examples 100 \
+  --no-structured-output
 ```
 
 ## 3) Normalize + filter
